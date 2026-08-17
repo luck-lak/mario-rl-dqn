@@ -1,0 +1,193 @@
+"""
+学生作业文件：在马里奥场景中实现 DQN。
+
+你需要补全的核心函数：
+- `td_estimate`
+- `td_target`
+- `update_Q_online`
+"""
+
+from collections import deque
+from pathlib import Path
+import random
+
+import numpy as np
+import torch
+
+from neural import MarioNet
+
+
+class Mario:
+    def __init__(
+        self,
+        state_dim,
+        action_dim,
+        save_dir: Path,
+        checkpoint=None,
+        gpu_id=0,
+    ):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.save_dir = save_dir
+        if gpu_id is not None and torch.cuda.is_available():
+            if gpu_id < 0 or gpu_id >= torch.cuda.device_count():
+                raise ValueError(f"Invalid gpu_id={gpu_id}, available GPUs: {torch.cuda.device_count()}")
+            self.device = torch.device(f"cuda:{gpu_id}")
+        else:
+            self.device = torch.device("cpu")
+        self.use_cuda = self.device.type == "cuda"
+        print(f"[Device] Using: {self.device}")
+
+        self.memory = deque(maxlen=100000)
+        self.batch_size = 64
+
+        self.exploration_rate = 1.0
+        self.exploration_rate_decay = 0.99999975###0.9999885
+        ###rate_decay针对1000轮作了适配性调整
+        self.exploration_rate_min = 0.1
+        self.gamma = 0.9
+
+        self.curr_step = 0
+        self.burnin = 10000
+        self.learn_every = 3
+        self.sync_every = 10000
+        self.save_every = 500000#50000
+        ##考虑到500000还是太大了，在跑1000轮的时候可能更新不多，为了较完整的模拟，这个减小
+        ##修改（for 1000）
+
+        self.net = MarioNet(self.state_dim, self.action_dim).float()
+        if self.use_cuda:
+            self.net = self.net.to(device=self.device)
+        if checkpoint is not None:
+            self.load(checkpoint)
+
+        self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
+        self.loss_fn = torch.nn.SmoothL1Loss()
+
+    def act(self, state):
+        if np.random.rand() < self.exploration_rate:
+            action_idx = np.random.randint(self.action_dim)
+        else:
+            state = np.asarray(state, dtype=np.float32)
+            state = torch.as_tensor(state).unsqueeze(0)
+            if self.use_cuda:
+                state = state.to(self.device)
+            action_values = self.net(state, model="online")
+            action_idx = torch.argmax(action_values, axis=1).item()
+
+        self.exploration_rate *= self.exploration_rate_decay
+        self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
+        self.curr_step += 1
+        return action_idx
+
+    def cache(self, state, next_state, action, reward, done):
+        state = torch.as_tensor(np.asarray(state, dtype=np.float32))
+        next_state = torch.as_tensor(np.asarray(next_state, dtype=np.float32))
+        action = torch.tensor([action], dtype=torch.long)
+        reward = torch.tensor([reward], dtype=torch.float32)
+        done = torch.tensor([done], dtype=torch.bool)
+
+        # [replay-on-cpu] 回放池数据存在 CPU 内存，避免 GPU 显存溢出
+        # 原代码在此处将数据搬到 GPU，导致 6 万条经验占满显存触发 OOM
+        # if self.use_cuda:
+        #     state = state.to(self.device)
+        #     next_state = next_state.to(self.device)
+        #     action = action.to(self.device)
+        #     reward = reward.to(self.device)
+        #     done = done.to(self.device)
+
+        self.memory.append((state, next_state, action, reward, done))
+
+    def recall(self):
+        batch = random.sample(self.memory, self.batch_size)
+        state, next_state, action, reward, done = map(torch.stack, zip(*batch))
+
+        # [replay-on-cpu] 采样后再统一搬到 GPU
+        if self.use_cuda:
+            state = state.to(self.device)
+            next_state = next_state.to(self.device)
+            action = action.to(self.device)
+            reward = reward.to(self.device)
+            done = done.to(self.device)
+
+        return state, next_state, action.squeeze(), reward.squeeze(), done.squeeze()
+
+    def td_estimate(self, state, action):
+        """
+        根据 online 网络返回当前 batch 的 Q(s, a)。
+
+        提示：online 网络算 Q 值表，再按 action 取对应分数。见 ASSIGNMENT.md。
+        """
+        ##raise NotImplementedError("TODO: implement td_estimate")
+        current_q_values = self.net(state, model="online")
+        current_q = current_q_values[np.arange(0,self.batch_size),action]
+        return current_q
+
+
+    @torch.no_grad()
+    def td_target(self, reward, next_state, done):
+        """
+        根据 DQN 目标公式计算 TD target。
+
+        提示：target 网络算 next_state 最高分，再写 return 公式。见 ASSIGNMENT.md。
+        """
+        #raise NotImplementedError("TODO: implement td_target")
+        next_q_values = self.net(next_state, model="target")
+        next_q = next_q_values.max(dim=1)[0]
+        return (reward + (1-done.float())*self.gamma*next_q).float()
+
+    def update_Q_online(self, td_estimate, td_target):
+        """
+        使用 `self.loss_fn`、`self.optimizer` 完成一次参数更新。
+
+        提示：loss_fn → zero_grad → backward → step → return loss.item()。
+        """
+        #raise NotImplementedError("TODO: implement update_Q_online")
+        loss = self.loss_fn(td_estimate, td_target)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss.item()
+    
+    def sync_Q_target(self):
+        self.net.target.load_state_dict(self.net.online.state_dict())
+
+    def learn(self):
+        if self.curr_step % self.sync_every == 0:
+            self.sync_Q_target()
+
+        if self.curr_step % self.save_every == 0 and self.curr_step > 0:
+            self.save()
+
+        if self.curr_step < self.burnin:
+            return None, None
+
+        if self.curr_step % self.learn_every != 0:
+            return None, None
+
+        state, next_state, action, reward, done = self.recall()
+        td_est = self.td_estimate(state, action)
+        td_tgt = self.td_target(reward, next_state, done)
+        loss = self.update_Q_online(td_est, td_tgt)
+        return td_est.mean().item(), loss
+
+    def save(self, save_name=None):
+        if save_name is None:
+            save_path = self.save_dir / f"mario_net_{int(self.curr_step // self.save_every)}.chkpt"
+        else:
+            save_path = self.save_dir / save_name
+        torch.save(
+            {"model": self.net.state_dict(), "exploration_rate": self.exploration_rate},
+            save_path,
+        )
+        print(f"Saved checkpoint to {save_path}")
+        return save_path
+
+    def load(self, load_path):
+        checkpoint = torch.load(
+            load_path,
+            map_location=self.device,
+            weights_only=True,
+        )
+        self.net.load_state_dict(checkpoint["model"])
+        self.exploration_rate = checkpoint["exploration_rate"]

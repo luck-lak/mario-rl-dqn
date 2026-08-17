@@ -1,0 +1,15 @@
+# 训练产物：checkpoint 模型与日志曲线（体积大，不上传）
+checkpoints/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 本地工具配置（Claude 权限等，与项目无关）
+.claude/
+
+# 编辑器 / 系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,17 @@
+name: mario-dqn
+channels:
+  - defaults
+dependencies:
+  - python=3.10.20=h741d88c_0
+  - pip
+  - pip:
+    - --index-url https://download.pytorch.org/whl/cu121
+    - gym==0.17.2
+    - gym-super-mario-bros==7.3.0
+    - matplotlib==3.10.8
+    - nes-py==8.1.1
+    - numpy==2.2.6
+    - pyglet==1.5.0
+    - scikit-image==0.25.2
+    - torch==2.5.1+cu121
+    - torchvision==0.20.1+cu121
