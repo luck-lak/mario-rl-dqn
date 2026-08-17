@@ -1,5 +1,7 @@
 # Super Mario DQN —— 超级马里奥场景下的 DQN 强化学习实验
 
+[课程项目网址](https://www.lamda.nju.edu.cn/guolz/IntroAI/sp2026/project4.html)
+
 本仓库是深度强化学习课程实践作业：用 DQN 训练马里奥智能体，让它从游戏画面中学习如何通关。项目包含两部分核心内容：
 
 - **核心算法**：作业要求补全的 DQN 三个核心函数（Q 值估计、TD 目标、参数更新）；
