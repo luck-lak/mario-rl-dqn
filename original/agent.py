@@ -1,4 +1,18 @@
 """
+原版 agent.py（策略C优化前）
+
+本文件是本项目最初提交的 agent.py 完整备份：只补全了作业要求的三个核心函数
+（td_estimate / td_target / update_Q_online），未做任何性能优化。
+
+与当前 agent.py 的主要差异：
+- 经验回放使用 collections.deque(maxlen=100000)，而非环形 ReplayBuffer
+- 经验池数据直接存放在 GPU 上（当前版本改为存 CPU，采样后再搬上 GPU）
+- save_every = 500000（当前版本为 100000，且保存 checkpoint 后会清空经验池）
+- checkpoint 不保存 curr_step / exploration_rate，不支持断点续训
+
+保留本文件仅作版本对比参考，不参与运行。
+"""
+"""
 学生作业文件：在马里奥场景中实现 DQN。
 
 你需要补全的核心函数：
@@ -191,3 +205,4 @@ class Mario:
         )
         self.net.load_state_dict(checkpoint["model"])
         self.exploration_rate = checkpoint["exploration_rate"]
+
